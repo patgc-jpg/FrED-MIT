@@ -34,10 +34,8 @@ GPIO.setwarnings(False)
 #######################################################
 ########## CONFIG: set these before running ###########
 #######################################################
-HEATER_PIN  = 13         # <-- SET THIS: BCM GPIO pin driving the heater MOSFET / SSR.
-                         #     13 is just a hardware-PWM-capable placeholder. CONFIRM your wiring.
-HEATER_FREQ = 1000       # Hz. For a resistive heater the thermal mass integrates the PWM,
-                         # so the exact value is not critical (200-1000 Hz works fine).
+HEATER_PIN  = 6          # BCM GPIO 6 — matches Extruder.HEATER_PIN in extruder.py / main.py
+HEATER_FREQ = 1          # Hz. Matches the 1 Hz used in extruder.py (slow thermal system).
 
 # ---- Mode is chosen from the TERMINAL, not by editing this file ----
 #   python heater_control.py --mode identify --profile 1
