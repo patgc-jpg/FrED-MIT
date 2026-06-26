@@ -1,14 +1,23 @@
 ######### Program to control the FrED's DC motor ########
 #
-# Two modes (set MODE below):
-#   MODE = "identify" -> OPEN LOOP: apply a known input profile and log speed(t).
-#                        Use this data to fit the system model.
-#   MODE = "control"  -> CLOSED LOOP: chosen controller drives motor to rpm_reference.
+# Two modes, chosen from the TERMINAL (see examples below):
+#   --mode identify -> OPEN LOOP: apply a known input profile and log speed(t).
+#                      Use this data to fit the system model.
+#   --mode control  -> CLOSED LOOP: chosen controller drives motor to --setpoint
+#                      using --kp/--ki/--kd (only when --controller PID).
+#
+# Examples:
+#   python motor_control.py --mode identify --profile 1
+#   python motor_control.py --mode identify --profile 2 --opcion_ls 11
+#   python motor_control.py --mode control  --controller PID  --setpoint 45 --kp 0.3106 --ki 9.703 --kd 0.02044
+#   python motor_control.py --mode control  --controller PI   --setpoint 45
+#   python motor_control.py --mode control  --controller STSM --setpoint 45
 
 import os
 import cv2
 import time
 import math
+import argparse
 import board
 import busio
 import atexit
@@ -28,18 +37,51 @@ from adafruit_mcp3xxx.analog_in import AnalogIn
 
 
 #######################################################
-########## CONFIG: set these before running ###########
+########## CONFIG: set via terminal arguments #########
 #######################################################
-MODE       = "identify"   # "identify" (open loop, for system ID) or "control" (closed loop)
-PROFILE    = 1            # open-loop profile, used ONLY when MODE == "identify"
-                          #   1 -> constant step  (motor_input = 29)
-                          #   2 -> least-squares / PRBS excitation
-CONTROLLER = "PID"        # controller to use, ONLY when MODE == "control"
-                          #   "PID" | "PI" | "STSM"
+parser = argparse.ArgumentParser(
+    description="FrED DC motor: identify (open loop, for system ID) or control (closed loop).")
+parser.add_argument("--mode", choices=["identify", "control"], default="identify",
+                    help="identify = open loop for system ID; control = closed loop. Default: identify")
+parser.add_argument("--profile", type=int, default=1,
+                    help="open-loop test profile (1 or 2). Only used in identify mode. Default: 1")
+parser.add_argument("--controller", choices=["PID", "PI", "STSM"], default="PID",
+                    help="controller type. Only used in control mode. Default: PID")
+parser.add_argument("--setpoint", type=float, default=45.0,
+                    help="rpm setpoint. Only used in control mode. Default: 45")
+parser.add_argument("--kp", type=float, default=0.3106,
+                    help="PID proportional gain. Only used when controller=PID. Default: 0.3106")
+parser.add_argument("--ki", type=float, default=9.703,
+                    help="PID integral gain. Only used when controller=PID. Default: 9.703")
+parser.add_argument("--kd", type=float, default=0.02044,
+                    help="PID derivative gain. Only used when controller=PID. Default: 0.02044")
+parser.add_argument("--opcion_ls", type=int, default=11,
+                    help="least-squares option for profile 2. Default: 11")
+parser.add_argument("--duration", type=float, default=30.0,
+                    help="identify sequence duration in seconds. Default: 30")
+args = parser.parse_args()
 
-rpm_reference    = 45     # desired motor speed (rpm), used ONLY in "control" mode
-opcion_LS        = 11     # least-squares option,      used ONLY when PROFILE == 2
-PROFILE_DURATION = 30     # s — duration of the identify sequence; alert prints 5 s after this
+MODE             = args.mode
+PROFILE          = args.profile
+CONTROLLER       = args.controller
+rpm_reference    = args.setpoint
+opcion_LS        = args.opcion_ls
+PROFILE_DURATION = args.duration
+KP, KI, KD      = args.kp, args.ki, args.kd
+
+# Human-readable descriptions (used in the banner)
+PROFILE_DESC = {
+    1: "constant step, open loop",
+    2: "rich PRBS excitation for least squares",
+}
+CONTROLLER_DESC = {
+    "PID":  "classic three-term proportional-integral-derivative",
+    "PI":   "proportional-integral, no derivative term",
+    "STSM": "robust Super-Twisting sliding mode control",
+}
+
+########## safety / limits ##########
+MOTOR_PWM_CEILING = 100   # % — no hay limite explicito de RPM en este codigo
 
 ########## sample / timing ##########
 tm         = 0.02
@@ -133,6 +175,20 @@ def motor_input_profile(current_time, option):
 
 
 #######################################################
+########## PID step (gains settable from terminal) ####
+#######################################################
+def pid_step(reference, measurement, prev_error, error_sum,
+             current_time, prev_time, kp, ki, kd):
+    """One PID iteration with gains passed as arguments."""
+    delta_time = current_time - prev_time
+    error   = reference - measurement
+    error_d = (error - prev_error) / delta_time if delta_time > 0 else 0.0
+    error_i = (error * delta_time) + error_sum
+    output  = kp * error + ki * error_i + kd * error_d
+    return output, error_i, error
+
+
+#######################################################
 ########## Controller state ###########################
 #######################################################
 previous_time     = 0
@@ -176,6 +232,33 @@ def plotD():
 
 
 #######################################################
+########## Startup banner #############################
+#######################################################
+print("=" * 60)
+print(" FrED MOTOR DC")
+print("=" * 60)
+if MODE == "identify":
+    desc = PROFILE_DESC.get(PROFILE, "UNKNOWN profile -> motor stays off")
+    print(f" Mode       : IDENTIFY  (open loop, system identification)")
+    print(f" Profile    : {PROFILE}  ->  {desc}")
+    print(f" Duration   : {PROFILE_DURATION:.0f} s")
+else:  # control
+    ctrl_desc = CONTROLLER_DESC.get(CONTROLLER, "UNKNOWN controller")
+    print(f" Mode       : CONTROL  (closed loop)")
+    print(f" Controller : {CONTROLLER}  ->  {ctrl_desc}")
+    print(f" Setpoint   : {rpm_reference:.1f} rpm")
+    if CONTROLLER == "PID":
+        print(f" Gains      : Kp = {KP}   Ki = {KI}   Kd = {KD}")
+    else:
+        print(f" Gains      : fixed inside FrED_functions")
+print(f" PWM max    : {MOTOR_PWM_CEILING}%  (no explicit RPM ceiling in this code)")
+print(f" Sample     : {tm * 1000:.1f} ms")
+print("=" * 60)
+print(" Press Ctrl+C to stop and save data to FrED_data.txt")
+print("=" * 60)
+print("  time(s)\trpm\tmotor_input")
+
+#######################################################
 ########## Main loop ##################################
 #######################################################
 tstart       = time.perf_counter()
@@ -206,9 +289,9 @@ try:
         # 2) decide motor input
         if MODE == "control":
             if CONTROLLER == "PID":
-                motor_input, error_i, PIDerror = FrED_functions.PID(
+                motor_input, error_i, PIDerror = pid_step(
                     rpm_reference, rpm, previous_PIDerror,
-                    error_sum, current_time, previous_PIDtime)
+                    error_sum, current_time, previous_PIDtime, KP, KI, KD)
                 previous_PIDerror = PIDerror
             elif CONTROLLER == "PI":
                 motor_input, error_i = FrED_functions.PI(
@@ -232,7 +315,7 @@ try:
 
         # 3) apply linearization and clamp
         PWM_motor = FrED_functions.linearization(motor_input)
-        PWM_motor = max(min(PWM_motor, 100), 0)
+        PWM_motor = max(min(PWM_motor, MOTOR_PWM_CEILING), 0)
         motor_output.ChangeDutyCycle(PWM_motor)
 
         # 4) console feedback (time \t rpm \t motor_input)
