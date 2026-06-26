@@ -206,10 +206,16 @@ try:
         current_time = time.perf_counter() - tstart
 
         # 1) read -> convert -> filter temperature
-        voltage         = thermistor.voltage
-        raw_temperature = FrED_functions.get_temperature(voltage)
-        temperature     = FrED_functions.temp_filter(raw_temperature, previous_temp)
-        previous_temp   = temperature
+        try:
+            voltage         = thermistor.voltage
+            raw_temperature = FrED_functions.get_temperature(voltage)
+            temperature     = FrED_functions.temp_filter(raw_temperature, previous_temp)
+            previous_temp   = temperature
+        except Exception as e:
+            print(f"[WARN] {current_time:.1f}s — sensor error: {e}. Heater OFF this cycle.")
+            heater_off()
+            match_time += tm
+            continue
 
         # 2) decide the heater command
         if MODE == "control":

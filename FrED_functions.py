@@ -346,11 +346,14 @@ def get_temperature(voltage: float) -> float:
     READINGS_TO_AVERAGE = 10
     if voltage < 0.0001 or voltage >= VOLTAGE_SUPPLY:
         return 0
-    resistance = ((VOLTAGE_SUPPLY - voltage) * RESISTOR )/ voltage
-    ln = math.log(resistance / RESISTANCE_AT_REFERENCE)
-    temperature = (1 / ((ln / BETA_COEFFICIENT) + (1 / REFERENCE_TEMPERATURE))) - 273.15
-    average_temperature = 0
-
+    resistance = ((VOLTAGE_SUPPLY - voltage) * RESISTOR) / voltage
+    if resistance <= 0:
+        return 0
+    try:
+        ln = math.log(resistance / RESISTANCE_AT_REFERENCE)
+        temperature = (1 / ((ln / BETA_COEFFICIENT) + (1 / REFERENCE_TEMPERATURE))) - 273.15
+    except (ValueError, ZeroDivisionError):
+        return 0
     return temperature
 
 def temp_filter (raw_temperature, previous_temp):
