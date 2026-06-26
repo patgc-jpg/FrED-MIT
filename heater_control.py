@@ -14,7 +14,7 @@
 # !!! SAFETY: a heater can cause fire / burns. Before running you MUST set
 #     HEATER_PIN and TEMP_MAX (fixed in this file) to match YOUR wiring and
 #     YOUR material. Never leave it unattended.
-
+    
 import time
 import math
 import argparse
