@@ -104,7 +104,7 @@ channel_0 = AnalogIn(mcp, MCP.P0)
 
 ########## DC Motor initialisation ##########
 ppr      = 300.8
-dcFreq   = 2500
+dcFreq   = 1000
 fanFreq  = 1000
 
 oldtime      = 0

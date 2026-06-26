@@ -342,9 +342,9 @@ def get_temperature(voltage: float) -> float:
     RESISTANCE_AT_REFERENCE = 100000 # Ω
     BETA_COEFFICIENT = 3977 # K
     VOLTAGE_SUPPLY = 3.3 # V
-    RESISTOR = 10000 # Ω
+    RESISTOR = 100000 # Ω
     READINGS_TO_AVERAGE = 10
-    if voltage < 0.0001:  # Prevenir división por cero
+    if voltage < 0.0001 or voltage >= VOLTAGE_SUPPLY:
         return 0
     resistance = ((VOLTAGE_SUPPLY - voltage) * RESISTOR )/ voltage
     ln = math.log(resistance / RESISTANCE_AT_REFERENCE)
