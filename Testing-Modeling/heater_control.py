@@ -126,6 +126,16 @@ def heater_input_profile(current_time, option):
         elif current_time < 330: output = 20
         else:                    output = 50
 
+    elif option == 4:
+        # --- Up staircase then down: richer excitation for ARX / least squares ---
+        if   current_time < 60:  output = 15
+        elif current_time < 120: output = 26
+        elif current_time < 180: output = 38
+        elif current_time < 240: output = 50
+        elif current_time < 360: output = 30
+        else:                    output = 10
+
+
     else:
         output = 0
 
@@ -148,10 +158,11 @@ def pid_step(reference, measurement, prev_error, error_sum,
 #######################################################
 ########## Controller state ###########################
 #######################################################
-previous_PIDtime  = 0
-previous_temp     = 25.0   # ambient guess for the first filter step
-previous_PIDerror = 0
-error_sum         = 0
+previous_PIDtime      = 0
+previous_temp         = 25.0   # ambient guess for the first filter step
+previous_PIDerror     = 0
+error_sum             = 0
+last_good_sensor_time = None   # tracks when we last got a valid reading
 
 ########## data lists (match save_data_temp signature) ##########
 time_data            = []
@@ -206,13 +217,22 @@ try:
         current_time = time.perf_counter() - tstart
 
         # 1) read -> convert -> filter temperature
+        sensor_ok = False
         try:
             voltage         = thermistor.voltage
             raw_temperature = FrED_functions.get_temperature(voltage)
             temperature     = FrED_functions.temp_filter(raw_temperature, previous_temp)
             previous_temp   = temperature
+            sensor_ok       = True
+            last_good_sensor_time = current_time
         except Exception as e:
-            print(f"[WARN] {current_time:.1f}s — sensor error: {e}. Heater OFF this cycle.")
+            print(f"[WARN] {current_time:.1f}s — sensor error: {e}")
+
+        # if no valid reading for > 1 s, force heater OFF
+        sensor_timeout = (last_good_sensor_time is None or
+                          current_time - last_good_sensor_time > 1.0)
+        if not sensor_ok and sensor_timeout:
+            print(f"[WARN] {current_time:.1f}s — 1 s without valid sensor data. Heater OFF.")
             heater_off()
             match_time += tm
             continue
